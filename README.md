@@ -12,9 +12,8 @@ blobDB is a high-performance, distributed file database implemented in C++. It l
 - **C++:** The core programming language for blobDB.
 - **Nodepp:** An asynchronous, non-blocking I/O framework for C++, providing the event-driven architecture.
 
-🤝 Contributing
-
+## 🤝 Contributing
 Contributions are welcome! If you have suggestions, bug reports, or want to contribute code, please feel free to open an issue or submit a pull request.
-📄 License
 
+## 📄 License
 This project is licensed under the MIT License - see the LICENSE file for details.
