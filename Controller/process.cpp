@@ -25,8 +25,9 @@ fs::read_folder( dir, [=]( string_t name ){ try {
 /*────────────────────────────────────────────────────────────────────────────*/
 
 namespace fileDB { void run_v1_process() { process::task::add([=](){
-coStart ; coDelay( TIME_DAYS(1) );
+coStart 
 
+    coDelay( TIME_HOURS(string::to_ulong(process::env::get("TMP_TIMEOUT"))) );
     reading_folder_list( process::env::get("STORAGE_PATH") );
 
 coGoto(0) ; coStop
