@@ -21,7 +21,7 @@ queue_t<ws_t> ws_list ; ptr_t<ws_t> ws_client;
 
 void onMain() {
     process::env::init(".env");
-    fileDB::run_v1_cluster();
+    blobDB::run_v1_cluster();
 }
 
 /*────────────────────────────────────────────────────────────────────────────*/

@@ -2,7 +2,7 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { apify_host_t<ws_t> run_v1_ws_server_routine(){
+namespace blobDB { apify_host_t<ws_t> run_v1_ws_server_routine(){
     apify_host_t<ws_t> app;
 
     app.on( "DELETE", "/api/v1/file", [=]( apify_t<ws_t> cli ){ try {
@@ -14,7 +14,7 @@ namespace fileDB { apify_host_t<ws_t> run_v1_ws_server_routine(){
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void run_v1_ws_server(){
+namespace blobDB { void run_v1_ws_server(){
 
     auto penv= process::env::get( "APIF_PORT" );
     auto port= string::to_uint( penv );

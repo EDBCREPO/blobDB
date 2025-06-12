@@ -2,7 +2,7 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
+namespace blobDB { express_tcp_t run_v1_http_server_api_routine(){
     auto app = express::http::add();
 
     /*.........................................................................*/
@@ -192,7 +192,7 @@ namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { express_tcp_t run_v1_http_server_routine(){
+namespace blobDB { express_tcp_t run_v1_http_server_routine(){
 
     auto app = express::http::add();
 
@@ -295,7 +295,7 @@ namespace fileDB { express_tcp_t run_v1_http_server_routine(){
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void run_v1_http_server(){
+namespace blobDB { void run_v1_http_server(){
 
     auto penv= process::env::get( "HTTP_PORT" );
     auto port= string::to_uint( penv );

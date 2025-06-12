@@ -2,7 +2,7 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void cluster_reset( ptr_t<bool> state ) { try {
+namespace blobDB { void cluster_reset( ptr_t<bool> state ) { try {
 
     if( process::is_child() ){ throw ""; }
     if( *state==false )      { throw ""; }
@@ -22,7 +22,7 @@ namespace fileDB { void cluster_reset( ptr_t<bool> state ) { try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void run_v1_cluster() { try {
+namespace blobDB { void run_v1_cluster() { try {
     if( process::is_child() ){ throw ""; }
     ptr_t<bool> state =new bool( true );
 

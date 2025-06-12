@@ -2,14 +2,14 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void even_emit_erase( string_t path ) { try {
+namespace blobDB { void even_emit_erase( string_t path ) { try {
     if( ws_client == nullptr ){ throw ""; }
     apify::add( *ws_client ).emit( "DELETE", "/api/v1/file", path );
 } catch(...) {} }}
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { bool is_expired( object_t hdr ){ try {
+namespace blobDB { bool is_expired( object_t hdr ){ try {
 
     auto EXP = string::to_ulong( hdr["EXP"].as<string_t>() );
     auto WON = string::to_ulong( hdr["NOW"].as<string_t>() );
@@ -21,7 +21,7 @@ namespace fileDB { bool is_expired( object_t hdr ){ try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { bool is_file_expired( string_t dir ) { try {
+namespace blobDB { bool is_file_expired( string_t dir ) { try {
 
     if( string::to_int( process::env::get("EXP_TIME") )<=0 ){ return false; }
 
@@ -35,7 +35,7 @@ namespace fileDB { bool is_file_expired( string_t dir ) { try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { array_t<object_t> parse_query_stream( object_t data ){ try {
+namespace blobDB { array_t<object_t> parse_query_stream( object_t data ){ try {
     array_t<object_t> out;
 
     /*.........................................................................*/
@@ -121,7 +121,7 @@ namespace fileDB { array_t<object_t> parse_query_stream( object_t data ){ try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { template< class T >
+namespace blobDB { template< class T >
 object_t parse_query_file( object_t data, T& finp ){ try { object_t obj;
 
     /*.........................................................................*/
@@ -193,7 +193,7 @@ object_t parse_query_file( object_t data, T& finp ){ try { object_t obj;
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB {
+namespace blobDB {
 object_t parse_query_raw( string_t& finp, object_t data ){ try { object_t obj;
 
     /*.........................................................................*/
