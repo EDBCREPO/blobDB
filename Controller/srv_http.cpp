@@ -2,25 +2,27 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
+namespace blobDB { express_tcp_t run_v1_http_server_api_routine(){
     auto app = express::http::add();
 
     /*.........................................................................*/
 
     auto resolve = ([=]( express_http_t cli, object_t hdr ){ try {
-    if( !hdr.has_value() ){ throw ""; }
+    if( hdr.empty() ){ throw ""; }
 
         cli.write_header( 200, header_t({ { "Content-Type", path::mimetype(".json") } }) );
         cli.write( json::stringify( object_t({
-        { "message", HTTP_NODEPP::_get_http_status(200) },
-        { "status" , 200 }, { "data", hdr } }) ));
+            { "message", HTTP_NODEPP::_get_http_status(200) },
+            { "status" , 200 }, { "data", hdr } 
+        }) ));
 
     } catch(...) {
 
         cli.write_header( 404, header_t({ { "Content-Type", path::mimetype(".json") } }) );
         cli.write( json::stringify( object_t({
-        { "message", HTTP_NODEPP::_get_http_status(404) },
-        { "status" , 404 } }) ));
+            { "status" , 404 }, { "data", "something went wrong" },
+            { "message", HTTP_NODEPP::_get_http_status(404) }
+        }) ));
 
     }});
 
@@ -32,9 +34,9 @@ namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
           { throw except_t( "Invalid Content-Length" ); }
 
         auto len = string::to_ulong( cli.headers["Content-Length"] );
-        auto tmp = cli.read( min( (ulong) CHUNK_SIZE, len ) ); 
-        auto data= json::parse( cli.query ); cli.done(); 
-        
+        auto tmp = cli.read( min( (ulong) CHUNK_SIZE, len ) );
+        auto data= json::parse( cli.query ); cli.done();
+
         resolve( cli, parse_query_raw( tmp, data ) );
 
     } catch( except_t err ) { cli.params["ERRNO"]=err.data(); } });
@@ -143,11 +145,22 @@ namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
         if( !fs::exists_file(dir) || is_file_expired(dir) )
           { throw except_t("file not found"); }
 
+    string_t pass = cli.query.has("pass") ? cli.query["pass"] : nullptr;
         auto file = fs::readable( dir ); auto raw1 = file.read_line();
         auto hdr  = json::parse( encoder::base64::btoa( raw1 ) );
 
         auto raw2 = file.read_line();
-        auto len  = file.size() - ( raw1.size() + raw2.size() );
+        auto hash = crypto::hash::SHA256(); 
+        auto sha  = raw2; auto verified = true; 
+        auto start=( raw1.size() + raw2.size() );
+        auto len  =  file.size()-( raw1.size() + raw2.size() );
+        hash.update( json::stringify(hdr) ); hash.update(pass);
+
+        if( is_expired( hdr ) )
+          { even_emit_erase(dir); throw except_t("file not found"); }
+
+        if( hdr["ENC"].as<bool>() && memcmp( sha.get(), hash.get().get(), hash.get().size() )!=0 )
+          { verified = false; }
 
         if( is_expired( hdr ) )
           { even_emit_erase(dir); throw except_t("file not found"); }
@@ -161,8 +174,23 @@ namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
             { "encrypted" , hdr["ENC"] },
             { "mimetype"  , hdr["TYP"] },
             { "filename"  , hdr["NME"] },
-            { "fid"       , hdr["FID"] }
-            }) }, { "status" , 200 }
+            { "fid"       , hdr["FID"] },
+            { "verified"  , verified   }
+        }) }, { "status" , 200 } }) );
+
+    } catch( except_t err ) { cli.params["ERRNO"]=err.data(); } });
+
+    /*.........................................................................*/
+
+    app.REMOVE( "/v1/file/:FID", [=]( express_http_t cli ){ try {
+        auto dir = path::join(process::env::get("STORAGE_PATH"),"blob_"+cli.params["FID"]);
+
+        if( !fs::exists_file(dir) ){ throw except_t("file not found"); }
+             fs::remove_file(dir);
+
+        cli.status(200).sendJSON( object_t({
+            { "message", HTTP_NODEPP::_get_http_status(200) },
+            { "data"   , "removed" }, { "status" , 200 } 
         }) );
 
     } catch( except_t err ) { cli.params["ERRNO"]=err.data(); } });
@@ -192,7 +220,7 @@ namespace fileDB { express_tcp_t run_v1_http_server_api_routine(){
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { express_tcp_t run_v1_http_server_routine(){
+namespace blobDB { express_tcp_t run_v1_http_server_routine(){
 
     auto app = express::http::add();
 
@@ -230,11 +258,11 @@ namespace fileDB { express_tcp_t run_v1_http_server_routine(){
                ulong rang[3]; rang[0] = string::to_ulong( range[0] );
                      rang[1] =min(rang[0]+CHUNK_MB(10),len-1);
                      rang[2] =min(rang[0]+CHUNK_MB(10),len  );
-    
+
             cli.header( "Content-Type" , hdr["TYP"].as<string_t>() ); cli.header( "Accept-Range","bytes" )
                .header( "Content-Range", string::format("bytes %lu-%lu/%lu",rang[0],rang[1],len) )
                .header( "Cache-Control", "public, max-age=604800" );
-    
+
             file.set_range( start + rang[0], len - rang[2] );
 
             if( pass.empty() ){
@@ -245,10 +273,10 @@ namespace fileDB { express_tcp_t run_v1_http_server_routine(){
                 auto idx = type::bind( new ulong(0) );
                 auto key = hash.get();
 
-                file.onData([=]( string_t data ){ for( auto &x: data ){ 
-                    x^=key[*idx]; (*idx)=(*idx+1)%key.size(); 
+                file.onData([=]( string_t data ){ for( auto &x: data ){
+                    x^=key[*idx]; (*idx)=(*idx+1)%key.size();
                 }   cli.write( data ); });
-                
+
                 cli.status(206).send(); stream::pipe( file,cli );
 
             }
@@ -259,14 +287,10 @@ namespace fileDB { express_tcp_t run_v1_http_server_routine(){
                .header( "Cache-Control" , "public, max-age=604800" )
                .header( "Content-Length", string::to_string(len) );
 
-            if( pass.empty() ){
-                
-                cli.send(); stream::pipe( file, cli );
-
-            } else { 
+            if( pass.empty() ){ cli.sendStream(file); } else {
 
                 auto xenc = crypto::encrypt::XOR( hash.get() );
-                
+
                 file.onData([=]( string_t data ){ xenc.update(data); });
                 xenc.onData([=]( string_t data ){ cli.write  (data); });
                 file.onDrain.once([=](){ xenc.free(); });
@@ -295,7 +319,7 @@ namespace fileDB { express_tcp_t run_v1_http_server_routine(){
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void run_v1_http_server(){
+namespace blobDB { void run_v1_http_server(){
 
     auto penv= process::env::get( "HTTP_PORT" );
     auto port= string::to_uint( penv );

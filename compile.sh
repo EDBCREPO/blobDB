@@ -6,7 +6,7 @@ ulimit -n 524288 10485760 ; VAL=$( ulimit -Sn ) ; echo -e "MAX_FILENO: $VAL"
 
 FLAG=" -lpthread -lcrypto -lssl -lz" #  -lsqlite3 -largon2
 FILE=$(mktemp)
-NAME="fileDB"
+NAME="blobDB"
 
 echo -e "\nKilling Service" ; $( killall $NAME )
 
