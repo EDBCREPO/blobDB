@@ -24,13 +24,14 @@ fs::read_folder( dir, [=]( string_t name ){ try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace blobDB { void run_v1_process() { process::task::add([=](){
-coStart 
+namespace blobDB { void run_v1_process() { 
+process::add( coroutine::add( COROUTINE(){
+coBegin 
 
     coDelay( TIME_HOURS(string::to_ulong(process::env::get("TMP_TIMEOUT"))) );
     reading_folder_list( process::env::get("STORAGE_PATH") );
 
-coGoto(0) ; coStop
-}); }}
+coGoto(0) ; coFinish
+})); }}
 
 /*────────────────────────────────────────────────────────────────────────────*/

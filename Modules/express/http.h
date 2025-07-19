@@ -36,14 +36,14 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-#ifndef NODEPP_EXPRESS_GENERATOR
-#define NODEPP_EXPRESS_GENERATOR
+#ifndef EXPRESS_SERVER_SIDE_RENDERING
+#define EXPRESS_SERVER_SIDE_RENDERING
 namespace nodepp { namespace _express_ {
 
 GENERATOR( pipe ){
 private:
 
-    _file_::read  _read;
+    generator::file::read  _read;
 
 public:
 
@@ -64,7 +64,7 @@ public:
 GENERATOR( ssr ) {
 protected:
 
-    _file_::until rdd; _file_::write wrt;
+    generator::file::until rdd; generator::file::write wrt;
     ptr_t<bool> child=new bool(0);
     ptr_t<bool> state=new bool(0);
     array_t<ptr_t<ulong>> match;
@@ -100,8 +100,8 @@ public:
         if( *state == 1 )        { return  1; }
 
         if( str.get_borrow().size()>CHUNK_SIZE ){
-        if(!gzip ){ while( wrt(&str,str.get_borrow())==1 ); }
-        else      { while( wrt(&str,zlb.update_deflate(str.get_borrow()))==1 ); }
+        if(!gzip ){ while( wrt(&str,str.get_borrow())==1 ){/**/} }
+        else      { while( wrt(&str,zlb.update_deflate(str.get_borrow()))==1 ){/**/} }
         str.del_borrow(); return 1; }
 
     gnStart
@@ -114,13 +114,13 @@ public:
 
                 reg=match[sop]; cb=new ssr(1); next();
                 str.get_borrow()+=raw.slice( pos, reg[0] );
-                pos=match[sop][1];sop++;coWait((*cb)(str,dir,gzip)==1 );
+                pos=match[sop][1];++sop;coWait((*cb)(str,dir,gzip)==1 );
 
             } coGoto(2);
             } elif( !fs::exists_file( path ) ){ coGoto(1); }
 
                 file=fs::readable(path); cb=new ssr(1);
-                rdd =_file_::until(); set( nullptr );
+                rdd =generator::file::until(); set( nullptr );
 
                 while( file.is_available() ){
 
@@ -130,7 +130,7 @@ public:
                     } while(0);
 
                     if( rdd.state<=MAX_PATH && regex::test(rdd.data,dir) ){
-                        pos++; continue;
+                        ++pos; continue;
                     } elif( rdd.state<=MAX_PATH && pos%2!=0 ) {
                         dir=regex::match( rdd.data,"[^<°> \n\t]+" );
                         if( dir.empty() ){ continue; }
@@ -162,8 +162,8 @@ public:
                         cli.onDrain.once([=](){ *self->state=0; });
                         cli.onData([=]( string_t data ){
                             strm->get_borrow() +=data;
-                        }); process::poll::add( task, cli, str );
-                    });
+                        }); process::add( task, cli, str );
+                    }).resolve();
 
                 } while(0); coNext;
                 } elif( url::protocol( path )=="https" ) { do {
@@ -187,8 +187,8 @@ public:
                         cli.onDrain.once([=](){ *self->state=0; });
                         cli.onData([=]( string_t data ){
                             strm->get_borrow() +=data;
-                        }); process::poll::add( task, cli, str );
-                    });
+                        }); process::add( task, cli, str );
+                    }).resolve();
 
                 } while(0); coNext; } coGoto(4);
 
@@ -199,7 +199,7 @@ public:
 
             reg=match[sop]; cb=new ssr(1); next();
             str.get_borrow()+=raw.slice( pos, reg[0] );
-            pos=match[sop][1];sop++;coWait((*cb)(str,dir,gzip)==1 );
+            pos=match[sop][1];++sop;coWait((*cb)(str,dir,gzip)==1 );
 
         } coGoto(2); } coYield(2);
 
@@ -263,7 +263,7 @@ public:
             file->write( raw ); return 1;
         } while(1);
 
-    gnStop };
+    gnStop }
 
 };
 
@@ -298,7 +298,7 @@ public: query_t params;
     promise_t<object_t,except_t> parse_stream() const noexcept {
 
         auto tsk  = type::bind( _express_::inp() );
-        auto read = type::bind( _file_::until() );
+        auto read = type::bind( generator::file::until() );
         auto done = type::bind( object_t() );
         auto file = type::bind( file_t() );
         auto self = type::bind( this );
@@ -310,9 +310,9 @@ public: query_t params;
         auto bon = "--" + regex::match( self->headers["Content-Type"], "boundary=[^ ]+" ).slice(9);
         if ( bon.empty() ){ res(json::parse(query::parse(url::normalize("?"+self->read())))); return; }
 
-        process::poll::add([=](){
+        process::add( coroutine::add( COROUTINE(){
             if( self->is_closed() ){ rej("something went wrong"); return -1; }
-        coStart
+        coBegin
 
             while( *len>0 && self->is_available() ) {
            coWait((*read)( &self, bon )==1 ); *len-=min( read->state,*len );
@@ -329,7 +329,8 @@ public: query_t params;
                  fs::remove_file( y["path"].as<string_t>() );
             }}}} while(0); rej("something went wrong");
 
-        coStop });
+        coFinish 
+        }));
 
     }); }
 
@@ -418,9 +419,9 @@ public: query_t params;
 
         if( regex::test( headers["Accept-Encoding"], "gzip" ) ){
             header( "Content-Encoding", "gzip" ); send();
-            process::poll::add( task, *this, path, 1 );
+            process::await( task, *this, path, 1 );
         } else { send();
-            process::poll::add( task, *this, path, 0 );
+            process::await( task, *this, path, 0 );
         }
 
         return (*this);
@@ -488,7 +489,7 @@ protected:
         if( regex::test( cli.path, "^"+pathname ) ){ return true;  }
         if( _path[0].size() != _path[1].size() )   { return false; }
 
-        for ( ulong x=0; x<_path[0].size(); x++ ){ if( _path[1][x]==nullptr ){ return false; }
+        for ( ulong x=0; x<_path[0].size(); ++x ){ if( _path[1][x]==nullptr ){ return false; }
         elif( _path[1][x][0] == ':' ){ if( _path[0][x].empty() ){ return false; }
               cli.params[_path[1][x].slice(1)] = url::normalize( _path[0][x] ); }
         elif( _path[1][x].empty()        ){ continue;     }
