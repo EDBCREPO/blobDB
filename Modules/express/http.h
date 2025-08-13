@@ -24,8 +24,8 @@
 
 #include <nodepp/optional.h>
 #include <nodepp/cookie.h>
+#include <nodepp/crypto.h>
 #include <nodepp/stream.h>
-#include <nodepp/https.h>
 #include <nodepp/http.h>
 #include <nodepp/path.h>
 #include <nodepp/json.h>
@@ -36,213 +36,133 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-#ifndef NODEPP_EXPRESS_GENERATOR
-#define NODEPP_EXPRESS_GENERATOR
-namespace nodepp { namespace _express_ {
-
-GENERATOR( pipe ){
-private:
-
-    _file_::read  _read;
-
-public:
-
-    template< class T, class V > coEmit( const T& inp, const V& out ){
-        if( inp.is_closed() || out.is_closed() ){ return -1; }
-    gnStart inp.onPipe.emit(); out.onPipe.emit();
-        while( inp.is_available() && out.is_available() ){
-        while( _read(&inp) ==1 ) { coNext; }
-           if( _read.state <=0 ) { break;  }
-               inp.onData.emit( _read.data );
-        }      inp.close(); // out.close();
-    gnStop
-    }
-
-};
+#ifndef EXPRESS_SERVER_SIDE_RENDERING
+#define EXPRESS_SERVER_SIDE_RENDERING
 
 /*────────────────────────────────────────────────────────────────────────────*/
+
+namespace nodepp { namespace express { namespace {
+
+    regex_t reg0 = regex_t( "<°[ ]*|[ ]*°>" );
+    regex_t reg1 = regex_t( "gzip", true );
+
+    /*
+    regex_t reg2 = regex_t( "filename=\"([^\"]+)\"", true );
+    regex_t reg3 = regex_t( "content-type: (\\n+)" , true );
+    regex_t reg4 = regex_t( "name=\"([^\"]+)\""    , true );
+    regex_t reg5 = regex_t( "^([^\r]+)\r\n"        , true );
+    */
+
+    regex_t reg6 = regex_t( "boundary=[^ ]+"       , true );
+    regex_t reg7 = regex_t( "\r\n\r\n"             , true );
+    regex_t reg8 = regex_t( "Content-Disposition"  , false);
+
+}}}
+
+/*────────────────────────────────────────────────────────────────────────────*/
+
+namespace nodepp { namespace express {
 
 GENERATOR( ssr ) {
 protected:
 
-    _file_::until rdd; _file_::write wrt;
-    ptr_t<bool> child=new bool(0);
-    ptr_t<bool> state=new bool(0);
-    array_t<ptr_t<ulong>> match;
-    string_t      raw, dir;
-    ulong         pos, sop;
-    file_t        file;
-    ptr_t<ulong>  reg;
-    ptr_t<ssr>    cb;
+    struct NODE {
+        int wait = 0; string_t borrow;
+        queue_t<string_t> /*--*/ list;
+    };
 
-protected:
-
-    void next() {
-    auto war=raw.slice( reg[0], reg[1] );
-         dir=regex::match( war,"[^<°> \n\t]+" );
-    }
-
-    void set( string_t data ){
-        raw  =data; pos=0; sop=0;
-        match=regex::search_all(raw,"<°[^°]+°>");
-    }
+    generator::file::write write;
+    ptr_t<zlib_t> zlb; ptr_t<NODE> obj;
 
 public:
 
-    ssr()       : child(new bool(0)) {}
-    ssr( bool ) : child(new bool(1)) {}
+    ssr( bool ) noexcept : obj( new NODE() ) { zlb = new zlib_t(15|16); }
+    ssr() /*-*/ noexcept : obj( new NODE() ) { zlb = nullptr; }
 
     template< class T >
-    coEmit( T& str, string_t path ){
+    queue_t<string_t> render( T& str, string_t path ) noexcept {
 
-        if( !str.is_available() ){ return -1; }
-        if( *state == 1 )        { return  1; }
+        auto idx = express::reg0.search_all( path );
+        bool b = false; string_t out; ulong off=0;
+        queue_t<string_t> list;
 
-        if( str.get_borrow().size()>CHUNK_SIZE ){
-            while( wrt(&str,str.get_borrow())==1 );
-            str.del_borrow(); return 1;
-        }
+        do{ if ( idx.empty()  ){ list.push( path ); break; }
+            for( auto &x: idx ){
+            list.push( path.slice( off, x[0] ) ); off=x[1];
+        }   list.push( path.slice( off ) ); } while(0);
 
-    gnStart
+        auto x=list.first(); while( x!=nullptr ){
+        auto y=x->next; /*---------------*/ b=!b;
 
-        if( path.size()<=MAX_PATH ){
+        if( x->data.empty() ){ x=y; continue; }
+        if( b == true )/*--*/{ x=y; continue; }
 
-            if( !url::is_valid(path) ){
-            if( str.params.has(path) ){
-                set( str.params[path] ); while( sop!=match.size() ){
+        if( x->data.size() <= MAX_PATH ){
 
-                reg=match[sop]; cb=new ssr(1); next();
-                str.get_borrow()+=raw.slice( pos, reg[0] );
-                pos=match[sop][1];sop++;coWait((*cb)(str,dir)==1 );
-
-            } coGoto(2);
-            } elif( !fs::exists_file( path ) ){ coGoto(1); }
-
-                file=fs::readable(path); cb=new ssr(1);
-                rdd =_file_::until(); set( nullptr );
-
-                while( file.is_available() ){
-
-                    do { if( pos%2==0 ){ dir="<°"; }
-                         if( pos%2!=0 ){ dir="°>"; }
-                         coWait( rdd( &file, dir )==1 );
-                    } while(0);
-
-                    if( rdd.state<=MAX_PATH && regex::test(rdd.data,dir) ){
-                        pos++; continue;
-                    } elif( rdd.state<=MAX_PATH && pos%2!=0 ) {
-                        dir=regex::match( rdd.data,"[^<°> \n\t]+" );
-                        if( dir.empty() ){ continue; }
-                        coWait((*cb)( str, dir )==1 );
-                    } else {
-                        str.get_borrow()+=rdd.data;
-                    }
-
-            } coGoto(4); } else {
-
-                if( url::protocol( path )=="http" ){ do {
-
-                    fetch_t args; *state=1;
-
-                    auto self = type::bind( this );
-                    auto strm = type::bind( str );
-                    auto task = pipe();
-
-                    args.url     = path;
-                    args.method  = "GET";
-                    args.query   = str.query;
-                    args.headers = header_t({
-                        { "Params", query::format( str.params ) },
-                        { "Host"  , url::hostname( path ) }
-                    });
-
-                    http::fetch( args ).fail([=](...){ *self->state=0; })
-                                       .then([=]( http_t cli ){
-                        cli.onDrain.once([=](){ *self->state=0; });
-                        cli.onData([=]( string_t data ){
-                            strm->get_borrow() +=data;
-                        }); process::poll::add( task, cli, str );
-                    });
-
-                } while(0); coNext;
-                } elif( url::protocol( path )=="https" ) { do {
-
-                    ssl_t ssl; fetch_t args; *state=1;
-
-                    auto self = type::bind( this );
-                    auto strm = type::bind( str );
-                    auto task = pipe();
-
-                    args.url     = path;
-                    args.method  = "GET";
-                    args.query   = str.query;
-                    args.headers = header_t({
-                        { "Params", query::format( str.params ) },
-                        { "Host"  , url::hostname( path ) }
-                    });
-
-                    https::fetch( args, &ssl ).fail([=](...){ *self->state=0; })
-                                              .then([=]( https_t cli ){
-                        cli.onDrain.once([=](){ *self->state=0; });
-                        cli.onData([=]( string_t data ){
-                            strm->get_borrow() +=data;
-                        }); process::poll::add( task, cli, str );
-                    });
-
-                } while(0); coNext; } coGoto(4);
-
+            if( str->params.has( x->data ) ){
+                x->data = str->params[ x->data ];
+            } elif( fs::exists_file( x->data ) ){
+                x->data = fs::read_file( x->data );
             }
 
-        } else { coYield(1);
-            set( path ); while( sop!=match.size() ){
+        } x=y; }
 
-            reg=match[sop]; cb=new ssr(1); next();
-            str.get_borrow()+=raw.slice( pos, reg[0] );
-            pos=match[sop][1];sop++;coWait((*cb)(str,dir)==1 );
+    return list; }
 
-        } coGoto(2); } coYield(2);
+    template< class T >
+    coEmit( T& str, string_t path ){ void* addr = nullptr;
+    coBegin;
 
-        str.get_borrow()+=raw.slice(pos); coYield(4);
-        if( !(*child) && !str.get_borrow().empty() ){
-            coWait( wrt(&str,str.get_borrow())==1 );
-            str.set_borrow( nullptr ); coEnd;
+        obj->list = render( str, path ); addr = obj->list.first();
+
+        while( addr!=nullptr ){ do {
+
+            auto x = obj->list.as(addr);
+            obj->borrow = x->data;
+            addr = x->next;
+
+        } while(0);
+
+            if( !zlb.has_value() ){ coWait( write( &str, obj->borrow )  ==1 ); }
+          else{ coWait( write( &str, zlb->update_deflate( obj->borrow ))==1 ); }
+
         }
 
-    gnStop }
+    coFinish }
 
 };
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-GENERATOR( inp ){
+GENERATOR( post_parser ){
 public:
 
     template< class T >
     coEmit( const T& file, const ptr_t<object_t>& done, string_t raw ) {
-           static uint _state_=0; if( raw.empty() ){ _state_=0; return -1; }
-    gnStart
+        if( raw.empty() ){ _state_=0; return -1; }
+    coBegin
 
-        try { if( !regex::test( raw, "Content-Disposition" ) ){ throw ""; }
+        try{ if( !express::reg8.test( raw ) ){ throw 0; }
 
-            auto pos = regex::search( raw, "\r\n\r\n" ); 
-            if ( pos.empty() ) { throw ""; }
+            auto pos = express::reg7.search( raw );
+            if ( pos.empty() ) { throw 0; }
 
             auto hdr = raw.slice( 0, pos[0] );
-            auto bdy = raw.slice( pos[1] );
-            auto sby = bdy.slice( 0, 1024 );
-            header_t obj;
+            auto bdy = raw.slice(/**/pos[1] );
+            auto sby = bdy.slice( 0, 1024   ); header_t obj;
 
             ptr_t<regex_t> regs ({
                   regex_t( "filename=\"([^\"]+)\"", true ),
                   regex_t( "content-type: (\\n+)" , true ),
                   regex_t( "name=\"([^\"]+)\""    , true ),
                   regex_t( "^([^\r]+)\r\n"        , true )
-            });   
-            
+            });
+
             regs[0].search(hdr); if( !regs[0].get_memory().empty() ){ obj["filename"]=regs[0].get_memory()[0]; }
             regs[1].search(hdr); if( !regs[1].get_memory().empty() ){ obj["mimetype"]=regs[1].get_memory()[0]; }
             regs[2].search(hdr); if( !regs[2].get_memory().empty() ){ obj["name"]    =regs[2].get_memory()[0]; }
-            regs[3].search(sby); if( !regs[3].get_memory().empty() ){ sby            =regs[3].get_memory()[0]; } else { sby.clear(); }
+            regs[3].search(sby); if( !regs[3].get_memory().empty() ){ sby /*------*/ =regs[3].get_memory()[0]; }
+            /*----------------*/ else /*-------------------------*/ { sby.clear(); }
 
             if( !obj.has("filename") ){ (*done)[obj["name"]] = sby; coEnd; } else {
                 auto sha = crypto::hash::SHA256();  sha.update( obj["mimetype"] );
@@ -255,14 +175,12 @@ public:
 
             if( !(*done)[obj["name"]].has_value() ){ (*done)[obj["name"]] = array_t<object_t>(); }
             auto list=(*done)[obj["name"]].as<array_t<object_t>>(); auto name = obj["name"];
-            obj.erase("name"); list.push( json::parse( obj ) ); (*done)[name] = list; 
+            obj.erase("name"); list.push( json::parse( obj ) ); (*done)[name] = list;
             file->write( bdy );
 
-        } catch(...) { coEnd; } coYield(2); do {
-            file->write( raw ); return 1;
-        } while(1);
+        } catch(...) { coEnd; } do { coNext; file->write(raw); } while(1);
 
-    gnStop };
+    coFinish }
 
 };
 
@@ -284,7 +202,7 @@ protected:
 public: query_t params;
 
     express_http_t ( http_t& cli ) noexcept : http_t( cli ), exp( new NODE() ) { exp->state = 1; }
-   ~express_http_t () noexcept { if( exp.count() > 1 ){ return; } exp->state=0; free(); }
+    virtual ~express_http_t () noexcept { if( exp.count() > 1 ){ return; } exp->state=0; free(); }
     express_http_t () noexcept : exp( new NODE() ) { exp->state = 0; }
 
     /*.........................................................................*/
@@ -296,8 +214,8 @@ public: query_t params;
 
     promise_t<object_t,except_t> parse_stream() const noexcept {
 
-        auto tsk  = type::bind( _express_::inp() );
-        auto read = type::bind( _file_::until() );
+        auto read = type::bind( generator::file::until() );
+        auto tsk  = type::bind( express::post_parser() );
         auto done = type::bind( object_t() );
         auto file = type::bind( file_t() );
         auto self = type::bind( this );
@@ -306,29 +224,30 @@ public: query_t params;
         if( !self->headers.has("Content-Length") ){ rej( except_t( "content length mismatch" ) ); return; }
 
         auto len = type::bind( string::to_ulong( self->headers["Content-Length"] ) );
-        auto bon = "--" + regex::match( self->headers["Content-Type"], "boundary=[^ ]+" ).slice(9);
+        auto bon = "--" + express::reg6.match( self->headers["Content-Type"] ).slice(9);
         if ( bon.empty() ){ res(json::parse(query::parse(url::normalize("?"+self->read())))); return; }
 
-        process::poll::add([=](){
+        process::add( coroutine::add( COROUTINE(){
             if( self->is_closed() ){ rej("something went wrong"); return -1; }
-        coStart
+        coBegin
 
-            while( *len>0 && self->is_available() ) { 
-           coWait((*read)( &self, bon )==1 ); *len-=min( read->state,*len );
+            while( *len>0 && self->is_available() ) {
+           coWait((*read)( &self, bon )==1 ); *len-=min( (ulong) read->state,*len );
                if( read->state<= 0         ){ coGoto(1); }
                if( read->data != bon       ){
                         (*tsk)(file,done,read->data);
                } else { (*tsk)(file,done,nullptr   ); }
-            }  
-            
+            }
+
             res(*done); coEnd; coYield(1); do {
             for( auto x: done->keys() ){
-            if ((*done)[x].is<array_t<object_t>>() ){ 
+            if ((*done)[x].is<array_t<object_t>>() ){
             for( auto y:(*done)[x].as<array_t<object_t>>() ){
                  fs::remove_file( y["path"].as<string_t>() );
-            }}}} while(0); rej("something went wrong"); 
+            }}}} while(0); rej("something went wrong");
 
-        coStop });
+        coFinish
+        }));
 
     }); }
 
@@ -337,7 +256,7 @@ public: query_t params;
      const express_http_t& send( string_t msg ) const noexcept {
         if( exp->state == 0 ){ return (*this); }
         header( "Content-Length", string::to_string(msg.size()) );
-        if( regex::test( headers["Accept-Encoding"], "gzip" ) && msg.size()>UNBFF_SIZE ){
+        if( express::reg1.test( headers["Accept-Encoding"] ) && msg.size()>UNBFF_SIZE ){
             header( "Content-Encoding", "gzip" ); send();
             write( zlib::gzip::get( msg ) ); close();
         } else {
@@ -350,7 +269,7 @@ public: query_t params;
           { status(404).send("file does not exist"); } file_t file ( dir, "r" );
             header( "Content-Length", string::to_string(file.size()) );
             header( "Content-Type", path::mimetype(dir) );
-        if( regex::test( headers["Accept-Encoding"], "gzip" ) ){
+        if( express::reg1.test( headers["Accept-Encoding"] ) ){
             header( "Content-Encoding", "gzip" ); send();
             zlib::gzip::pipe( file, *this );
         } else {
@@ -391,7 +310,7 @@ public: query_t params;
     template< class T >
     const express_http_t& sendStream( T readableStream ) const noexcept {
        if( exp->state == 0 ){ return (*this); }
-       if( regex::test( headers["Accept-Encoding"], "gzip" ) ){
+       if( express::reg1.test( headers["Accept-Encoding"] ) ){
             header( "Content-Encoding", "gzip" ); send();
             zlib::gzip::pipe( readableStream, *this );
         } else { send();
@@ -401,9 +320,10 @@ public: query_t params;
 
     const express_http_t& header( header_t headers ) const noexcept {
         if( exp->state == 0 ){ return (*this); }
-        forEach( item, headers.data() ){
-            header( item.first, item.second );
-        }   return (*this);
+        auto x=headers.raw().first(); while( x!=nullptr ){
+        auto y=x->next; /*-------------------------------*/
+             exp->_headers[x->data.first] = x->data.second;
+        x=y; } return (*this);
     }
 
     const express_http_t& redirect( string_t url ) const noexcept {
@@ -413,8 +333,35 @@ public: query_t params;
 
     const express_http_t& render( string_t path ) const noexcept {
         if( exp->state == 0 ){ return (*this); }
-        send(); auto cb = _express_::ssr();
-        process::poll::add( cb, *this, path );
+
+        auto self = type::bind( this );
+
+        if( express::reg1.test( headers["Accept-Encoding"] ) ){
+            auto task = express::ssr( true );
+            header( "Content-Encoding", "gzip" );
+            send(); process::add( task, self, path );
+        } else {
+            auto task = express::ssr();
+            send(); process::add( task, self, path );
+        }
+
+        return (*this);
+    }
+
+    const express_http_t& render( file_t file ) const noexcept {
+        if( exp->state == 0 ){ return (*this); }
+
+        auto self = type::bind( this );
+
+        if( express::reg1.test( headers["Accept-Encoding"] ) ){
+            auto task = express::ssr( true );
+            header( "Content-Encoding", "gzip" );
+            send(); process::add( task, self, stream::await( file ) );
+        } else {
+            auto task = express::ssr();
+            send(); process::add( task, self, stream::await( file ) );
+        }
+
         return (*this);
     }
 
@@ -432,8 +379,7 @@ public: query_t params;
     const express_http_t& send() const noexcept {
         if( exp->state == 0 ){ return (*this); }
         write_header(exp->status,exp->_headers);
-        exp->state = 0; this->del_borrow();
-        return (*this);
+        exp->state = 0; return (*this);
     }
 
     const express_http_t& done() const noexcept {
@@ -464,10 +410,10 @@ protected:
     };  ptr_t<NODE> obj;
 
     void execute( string_t path, express_item_t& data, express_http_t& cli, function_t<void>& next ) const noexcept {
-          if( data.middleware.has_value() ){ data.middleware.value()( cli, next ); }
-        elif( data.callback.has_value()   ){ data.callback.value()( cli ); next(); }
-        elif( data.router.has_value()     ){ data.router.value().run( path, cli ); next(); }
-    }
+        if  ( data.middleware.has_value() ){ data.middleware.value()( cli, next ); return; }
+        elif( data.callback.has_value()   ){ data.callback.value()( cli ); /*-----------*/ }
+        elif( data.router.has_value()     ){ data.router.value().run( path, cli ); /*---*/ }
+    next(); }
 
     bool path_match( express_http_t& cli, string_t base, string_t path ) const noexcept {
         string_t pathname = normalize( base, path );
@@ -480,11 +426,10 @@ protected:
         if( regex::test( cli.path, "^"+pathname ) ){ return true;  }
         if( _path[0].size() != _path[1].size() )   { return false; }
 
-        for ( ulong x=0; x<_path[0].size(); x++ ){ if( _path[1][x]==nullptr ){ return false; }
+        for ( ulong x=0; x<_path[0].size(); ++x ){ if( _path[1][x]==nullptr ){ return false; }
         elif( _path[1][x][0] == ':' ){ if( _path[0][x].empty() ){ return false; }
               cli.params[_path[1][x].slice(1)] = url::normalize( _path[0][x] ); }
-        elif( _path[1][x].empty()        ){ continue;     }
-        elif( _path[1][x] == "*"         ){ continue;     }
+        elif( _path[1][x].empty() /*--*/ ){ continue;     }
         elif( _path[1][x] != _path[0][x] ){ return false; }}
 
         return true;
@@ -498,20 +443,18 @@ protected:
 
         while ( n!=nullptr ) {
             if( !cli.is_available() || cli.is_express_closed() ){ break; }
-            if(( n->data.path=="*" && regex::test( cli.path, "^"+_base ))
-            || ( n->data.path=="*" && obj->path.empty() )
-            || ( path_match( cli, _base, n->data.path ) ) ){
-            if ( n->data.method.empty() || n->data.method==cli.method ){
+            if(( n->data.path.empty() && obj->path.empty() ) /*-----------*/
+            || ( path_match( cli, _base, n->data.path ) ) /*--------------*/
+            || ( n->data.path.empty() && regex::test( cli.path, "^"+_base ))
+        ){  if ( n->data.method.empty() || n->data.method==cli.method ){
                  execute( _base, n->data, cli, next );
-            } else { next(); }
-            } else { next(); }
-        }
+        } else { next(); }} else { next(); }}
 
     }
 
     string_t normalize( string_t base, string_t path ) const noexcept {
-    auto new_path =  base.empty() ? ("/"+path) : path.empty() ?
-                                    ("/"+base) : path::join( base, path );
+    auto new_path =  base.empty() ? ("/"+path) : path.empty() ? /*------*/
+    /*---------------------------*/ ("/"+base) : path::join( base, path );
     return path::normalize( new_path );
     }
 
@@ -523,7 +466,7 @@ public:
     /*.........................................................................*/
 
     void     set_path( string_t path ) const noexcept { obj->path = path; }
-    string_t get_path()                const noexcept { return obj->path; }
+    string_t get_path() /*----------*/ const noexcept { return obj->path; }
 
     /*.........................................................................*/
 
@@ -535,7 +478,7 @@ public:
 
     const express_tcp_t& RAW( string_t _method, string_t _path, CALBK cb ) const noexcept {
         express_item_t item; // memset( (void*) &item, 0, sizeof(item) );
-        item.path     = _path.empty() ? "*" : _path;
+        item.path     = _path.empty() ? nullptr : _path;
         item.method   = _method;
         item.callback = cb;
         obj->list.push( item ); return (*this);
@@ -554,8 +497,8 @@ public:
     const express_tcp_t& USE( string_t _path, express_tcp_t cb ) const noexcept {
         express_item_t item; // memset( (void*) &item, 0, sizeof(item) );
         cb.set_path( normalize( obj->path, _path ) );
-        item.method     = nullptr;
-        item.path       = "*";
+        item.method     = nullptr; /*---------*/
+        item.path       = nullptr; /*---------*/
         item.router     = optional_t<MIMES>(cb);
         obj->list.push( item ); return (*this);
     }
@@ -568,9 +511,9 @@ public:
 
     const express_tcp_t& USE( string_t _path, MIDDL cb ) const noexcept {
         express_item_t item; // memset( (void*) &item, 0, sizeof(item) );
-        item.path       = _path.empty() ? "*" : _path;
+        item.path       = _path.empty() ? nullptr : _path;
         item.middleware = optional_t<MIDDL>(cb);
-        item.method     = nullptr;
+        item.method     = nullptr; /*---------*/
         obj->list.push( item ); return (*this);
     }
 
@@ -714,33 +657,32 @@ namespace nodepp { namespace express { namespace http {
 
     express_tcp_t file( string_t base ) { express_tcp_t app;
 
-        app.ALL([=]( express_http_t& cli ){
+        app.ALL([=]( express_http_t& cli ){ try {
 
             auto pth = regex::replace( cli.path, app.get_path().slice(1), "/" );
                  pth = regex::replace_all( pth, "\\.[.]+/", "" );
 
-            auto dir = pth.empty()? path::join( base, "" ) :
-                                    path::join( base,pth ) ;
+            auto dir = pth.empty()? path::join( base, "" ):
+            /*-------------------*/ path::join( base,pth );
 
-            if( dir.empty() ){ dir = path::join( base, "index.html" ); }
-            if( dir[dir.last()] == '/' ){ dir += "index.html"; }
+            if( dir.empty() ) /*-----*/ { dir = base; }
+            if( fs::exists_folder(dir) ){
+            if(!fs::exists_file( dir + "index.html" ) )
+              { cli.send("file not found 404"); return; }
+                dir += "index.html";
+            }
 
-            if( fs::exists_file(dir+".html")== true ){ dir += ".html"; }
-            if(!fs::exists_file(dir) || dir == base ){
-            if(!path  ::extname(dir).empty() ){ cli.status(404).send("not_found"); return; }
-            if( fs::exists_file( path::join( base, "404.html" ) )){
-                dir = path::join( base, "404.html" ); cli.status(404);
-            } else { cli.status(404).send("Oops 404 Error"); return; } }
+            auto str = fs::readable( dir );
 
             if( !cli.headers.has("Range") ){
 
-                if( regex::test(path::mimetype(dir),"audio|video",true) ){ cli.send(); return; }
-                if( regex::test(path::mimetype(dir),"html",true) ){ cli.render(dir); } else {
-                    cli.header( "Cache-Control", "public, max-age=604800" );
-			        cli.sendFile( dir );
-                }
+                if( regex::test(path::mimetype(dir),"audio|video",true) )
+                  { cli.send(); return; }
 
-            } else { auto str = fs::readable( dir );
+                cli.header( "Cache-Control", "public, max-age=604800" );
+                cli.sendStream( str );
+
+            } else {
 
                 array_t<string_t> range = regex::match_all(cli.headers["Range"],"\\d+",true);
                    ulong rang[3]; rang[0] = string::to_ulong( range[0] );
@@ -755,7 +697,8 @@ namespace nodepp { namespace express { namespace http {
                 cli.status(206).sendStream( str );
 
             }
-        });
+
+        } catch(...) { cli.status(404).send("file not found"); } });
 
         return app;
     }

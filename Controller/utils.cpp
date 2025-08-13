@@ -2,26 +2,7 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void even_emit_erase( string_t path ) { try {
-    if( ws_client == nullptr ){ throw ""; }
-    apify::add( *ws_client ).emit( "DELETE", "/api/v1/file", path );
-} catch(...) {} }}
-
-/*────────────────────────────────────────────────────────────────────────────*/
-
-namespace fileDB { bool is_expired( object_t hdr ){ try {
-
-    auto EXP = string::to_ulong( hdr["EXP"].as<string_t>() );
-    auto WON = string::to_ulong( hdr["NOW"].as<string_t>() );
-    auto NOW = date  ::now();
-
-    if( EXP == 0 || NOW <= ( WON + EXP ) ) { return false; }
-
-} catch(...) {} return true; }}
-
-/*────────────────────────────────────────────────────────────────────────────*/
-
-namespace fileDB { bool is_file_expired( string_t dir ) { try {
+namespace blobDB { bool is_file_expired( string_t dir ) { try {
 
     if( string::to_int( process::env::get("EXP_TIME") )<=0 ){ return false; }
 
@@ -35,7 +16,26 @@ namespace fileDB { bool is_file_expired( string_t dir ) { try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { array_t<object_t> parse_query_stream( object_t data ){ try {
+namespace blobDB { void even_emit_erase( string_t path ) { try {
+    if( ws_client == nullptr ){ throw ""; }
+    apify::add( *ws_client ).emit( "DELETE", "/api/v1/file", path );
+} catch(...) {} }}
+
+/*────────────────────────────────────────────────────────────────────────────*/
+
+namespace blobDB { bool is_expired( object_t hdr ){ try {
+
+    auto EXP = string::to_ulong( hdr["EXP"].as<string_t>() );
+    auto WON = string::to_ulong( hdr["NOW"].as<string_t>() );
+    auto NOW = date  ::now();
+
+    if( EXP == 0 || NOW <= ( WON + EXP ) ) { return false; }
+
+} catch(...) {} return true; }}
+
+/*────────────────────────────────────────────────────────────────────────────*/
+
+namespace blobDB { array_t<object_t> parse_query_stream( object_t data ){ try {
     array_t<object_t> out;
 
     /*.........................................................................*/
@@ -58,7 +58,7 @@ namespace fileDB { array_t<object_t> parse_query_stream( object_t data ){ try {
     for( auto x: data["file"].as<array_t<object_t>>() ){ object_t obj;
 
         auto name  = "blob_"+path::basename(x["path"].as<string_t>(),".tmp");
-        auto time  = string::to_uint(data["expire"].as<string_t>());
+        auto time  = string::to_uint(data["expire"].as<string_t>()) * 3600;
 
         obj["NME"] = x["filename"].as<string_t>(); obj["FID"]=name.slice(5);
         obj["DIR"] = path::join( process::env::get("STORAGE_PATH"), name );
@@ -121,7 +121,7 @@ namespace fileDB { array_t<object_t> parse_query_stream( object_t data ){ try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { template< class T >
+namespace blobDB { template< class T >
 object_t parse_query_file( object_t data, T& finp ){ try { object_t obj;
 
     /*.........................................................................*/
@@ -139,7 +139,7 @@ object_t parse_query_file( object_t data, T& finp ){ try { object_t obj;
          hash.update( string::to_string( process::now() ) );
     
     auto name = "blob_" + hash.get();
-    auto time = string::to_uint(data["expire"].as<string_t>());
+    auto time = string::to_uint(data["expire"].as<string_t>()) * 3600;
 
     /*.........................................................................*/
 
@@ -193,7 +193,7 @@ object_t parse_query_file( object_t data, T& finp ){ try { object_t obj;
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB {
+namespace blobDB {
 object_t parse_query_raw( string_t& finp, object_t data ){ try { object_t obj;
 
     /*.........................................................................*/
@@ -211,7 +211,7 @@ object_t parse_query_raw( string_t& finp, object_t data ){ try { object_t obj;
          hash.update( string::to_string( process::now() ) );
     
     auto name = "blob_" + hash.get();
-    auto time = string::to_uint(data["expire"].as<string_t>());
+    auto time = string::to_uint(data["expire"].as<string_t>()) * 3600;
 
     /*.........................................................................*/
 

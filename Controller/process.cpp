@@ -2,7 +2,7 @@
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void reading_folder_list( string_t dir ) {
+namespace blobDB { void reading_folder_list( string_t dir ) {
 
     auto idx = type::bind( new uint(0) );
 
@@ -24,12 +24,14 @@ fs::read_folder( dir, [=]( string_t name ){ try {
 
 /*────────────────────────────────────────────────────────────────────────────*/
 
-namespace fileDB { void run_v1_process() { process::task::add([=](){
-coStart ; coDelay( TIME_DAYS(1) );
+namespace blobDB { void run_v1_process() { 
+process::task::add( coroutine::add( COROUTINE(){
+coBegin 
 
+    coDelay( TIME_HOURS(string::to_ulong(process::env::get("TMP_TIMEOUT"))) );
     reading_folder_list( process::env::get("STORAGE_PATH") );
 
-coGoto(0) ; coStop
-}); }}
+coGoto(0) ; coFinish
+})); }}
 
 /*────────────────────────────────────────────────────────────────────────────*/
