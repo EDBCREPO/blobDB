@@ -17,7 +17,7 @@ fs::read_folder( dir, [=]( string_t name ){ try {
     if( is_file_expired(raw) )
       { fs::remove_file(raw); throw ""; }
 
-    apify::add( ws_list[*idx]->data )
+    apify::add( ws_list[*idx] )
     .emit( "PROCESS", "/api/v1/file", raw );
 
 } catch(...) {} }); }}
@@ -25,7 +25,7 @@ fs::read_folder( dir, [=]( string_t name ){ try {
 /*────────────────────────────────────────────────────────────────────────────*/
 
 namespace blobDB { void run_v1_process() { 
-process::task::add( coroutine::add( COROUTINE(){
+process::add( coroutine::add( COROUTINE(){
 coBegin 
 
     coDelay( TIME_HOURS(string::to_ulong(process::env::get("TMP_TIMEOUT"))) );
